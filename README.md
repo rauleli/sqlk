@@ -1,13 +1,31 @@
-sqlk
+# sqlk – Keyed List Handler over SQLite for Tcl
 
-keyed list on sqlite
+`sqlk` is a lightweight key-value store implemented in Tcl using SQLite, inspired by C-style keyed lists and TclX patterns. It allows concurrent access to structured memory via SQLite while preserving performance and minimizing memory usage.
 
-similar syntax than C keyed lists, but sort of taken from TclX, using sqlite so the same application couldn spawn child processes or threads and all of them could keep using the same information, using tcl and sqlite3 and preserving memory usage.
+## ✨ Features
+- Shared memory model between parent/child processes or threads using SQLite
+- Supports `:memory:` mode for fast in-RAM operations
+- Automatically serializes to file for persistent storage
+- Can be used as log/config manager
+- Originally created in 2008 and improved over time
 
-It also keeps values stored in file, so it can be used also as log or config file.
+## 🔧 Usage
 
-Due the sqlite ability to use :memory:, it can handle information quite fast, then serialize/parse it into a  file to release memory.
+```tcl
+package require sqlk
 
-The project started around 2008, and has been improving.  But never released as final first version.
+sqlk::init mydb.sqlite
+sqlk::set mydata user "Raúl"
+puts [sqlk::get mydata user]
+```
 
-Hope it can be useful for more people and improved even more
+## 📁 Persistence Modes
+- `sqlk::init ":memory:"` for fast temporary use
+- Provide a path to use disk-based SQLite storage
+
+## 📜 License
+MIT (or specify your preference)
+
+## 🙏 Acknowledgements
+Born out of real system needs for shared memory management.  
+Now shared to serve as a flexible tool for the Tcl community.
