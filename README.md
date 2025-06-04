@@ -14,9 +14,11 @@
 ```tcl
 package require sqlk
 
-sqlk::init mydb.sqlite
-sqlk::set mydata user "Raúl"
-puts [sqlk::get mydata user]
+sqlk::init mydb.sqlite -procname mainsqlk
+mainsqlk addvar myvar -procname myvar
+myvar set user.name "Raúl"
+myvar set user.id 0001
+puts [myvar get user.name]
 ```
 
 ## 📁 Persistence Modes
