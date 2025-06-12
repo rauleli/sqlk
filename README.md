@@ -14,7 +14,7 @@
 ```tcl
 package require sqlk
 
-sqlk::init mydb.sqlite -procname mainsqlk
+sqlk::kinit mydb.sqlite -procname mainsqlk
 mainsqlk addvar myvar -procname myvar
 myvar set user.name "Raúl"
 myvar set user.id 0001
