@@ -15,7 +15,7 @@
 package require sqlk
 
 sqlk::kinit mydb.sqlite -procname mainsqlk
-mainsqlk addvar myvar -procname myvar
+mainsqlk varadd myvar -procname myvar
 myvar set user.name "Raúl"
 myvar set user.id 0001
 puts [myvar get user.name]
