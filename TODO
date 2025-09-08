@@ -1,0 +1,60 @@
+Hallazgos y mejoras puntuales
+1) Seguridad/robustez SQL
+
+Estás usando sustitución de variables en sentencias db eval {... $var ...}. Con el binding de la extensión sqlite de Tcl normalmente sí se hace quoting seguro; aun así, para llaves/name que vienen de usuario, cuida que no pasen cadenas raras (comillas o puntos inesperados en paths).
+
+Para rutas tipo key1.key2.key3, tu TODO ya lo dice: no crear niveles intermedios si el padre no existe. Hoy kset podría “inventar” ramas. Marca error temprano para evitar estructuras zombis.
+
+2) eval/uplevel en el wrapper del ensemble
+
+Veo procs que hacen proc kget {key} {eval "[namespace parent]::kget [myname] $key"}. Funciona, pero evita eval (riesgo de expansión indeseada si llega algo con espacios raros).
+
+Usa invocación construida por lista (tailcall/uplevel con [list ...]) para que no haya interpretación extra. Misma API, cero sorpresas.
+
+3) Comprobaciones de pares clave-valor
+
+Vi validación con fmod([llength $args],2). En TCL puro queda más nítido y rápido con módulo entero (%) y expr. Ganas legibilidad y evitas floats.
+
+4) kmove y consistencia de orden
+
+Tu lógica de mover (after_id) cuida el “misma familia” y reordena bien, pero refuerza los UNIQUE/índices que sustentan esa invariancia (tienes índice por parent, bien).
+
+Asegura transacción alrededor de secuencias select → update para movimientos (si no lo haces ya en los bloques críticos). Minimiza estados intermedios incoherentes si se corta la luz.
+
+5) Árbol y path
+
+El path textual es práctico, pero barato romperse si cambias nombres. Para búsquedas, ya usas id/parent correctamente; no dependas de path para integridad, úsalo sólo como “cache” para tree/serialize.
+
+Si cambias el name de un nodo, confirma que el path y el orden se regeneran de forma atómica. Tienes triggers; dale una revisada a los casos de renombre encadenado.
+
+6) Serialización
+
+Tienes TODO de XML y opciones -format XML|TCL|TEXT. Mantén un sólo punto de verdad que camine el árbol y entregue pares {name val attr children}, y a partir de ahí formatea. Evita que cada formato recorra por su cuenta, así no duplicas bugs.
+
+Para -indent, cuida que no “mezcle” tabs/espacios si luego los vas a parsear. Consistencia total.
+
+7) Atributos (attr) y val
+
+attr almacenado como texto: define formato canónico (p. ej. lista Tcl key value key value) y valida al cargar. Si mañana metes JSON/XML, que sea opt-in (flag de formato) y que ambas puntas lo sepan.
+
+Delimita claramente clave reservada vs. clave de usuario en attr para que no te pisen metadatos internos.
+
+8) Concurrencia
+
+Ya pones busy/timeout. Si planeas multi-proceso, considera abrir en WAL mode (PRAGMA journal_mode=WAL) para lecturas concurrentes. Si es proceso único, como estás, ok.
+
+Donde haces secuencias largas (import/batch), BEGIN; ... COMMIT; explícito para rendimiento y atomicidad.
+
+9) Limpieza/pequeños smells
+
+Vi un puts ok en manejo de error de sqlite3 _db$dbid $filepath que parece debug colado. Remátalo.
+
+Usa ni/in de Tcl 8.6 (ya lo haces) pero evita comparaciones con strings "0" en expresiones numéricas. Menos casting mental = menos bugs tontos.
+
+Centraliza mensajes de error (`return -code error "...") con texto consistente. Ayuda un chorro cuando debugeas.
+
+10) Índices
+
+Ya tienes key_name(name) y key_data(name_id,parent)/key_data(parent).
+
+Si haces búsquedas frecuentes por name dentro del mismo parent, valora CREATE INDEX key_data_name_parent ON key_data(name_id, parent, name) para resolvedores rápidos en kget/kexist.
