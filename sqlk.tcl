@@ -105,7 +105,6 @@ namespace eval sqlk {
     set dbid [format %08s [incr seq]]
 
     if {[catch {sqlite3 _db$dbid $filepath} e]} {
-      puts ok
       return -code error $e
     }
 
@@ -900,7 +899,7 @@ namespace eval sqlk {
             set okey $op(-key)
             unset op(-key)
           } else {
-            return -code error "invalid arg \"[lindex [array names op] 0]\": must be -format or -indent"
+            return -code error "invalid arg \"[lindex [array names op] 0]\": must be -format, -indent or -key"
           }
         }
       }
@@ -1014,7 +1013,7 @@ namespace eval sqlk {
         return -code error "var name \"$name\" does not exists"
       }
 
-      ::sqlk::__parse [namespace current] $name $data TCL $okey
+      ::sqlk::__parse [namespace current] $name $data $oformat $okey
       return ""
     }
   }
