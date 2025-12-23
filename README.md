@@ -31,3 +31,9 @@ MIT (or specify your preference)
 ## 🙏 Acknowledgements
 Born out of real system needs for shared memory management.  
 Now shared to serve as a flexible tool for the Tcl community.
+
+## ☕ Support my work
+
+If this project has been helpful to you or saved you some development time, consider buying me a coffee! Your support helps me keep exploring new optimizations and sharing quality code.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/rauleli)
