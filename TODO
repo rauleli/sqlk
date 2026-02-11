@@ -58,3 +58,13 @@ Centraliza mensajes de error (`return -code error "...") con texto consistente. 
 Ya tienes key_name(name) y key_data(name_id,parent)/key_data(parent).
 
 Si haces búsquedas frecuentes por name dentro del mismo parent, valora CREATE INDEX key_data_name_parent ON key_data(name_id, parent, name) para resolvedores rápidos en kget/kexist.
+
+
+# Idea para tu TODO de búsquedas:
+proc _kfind {name pattern} {
+    variable db
+    set name_id [nameid $name]
+    # Convierte el estilo Tcl (key.*.val) a SQL (key.%.val)
+    set sql_pattern [string map {* % ? _} $pattern]
+    return [$db eval {SELECT path, val FROM key_data WHERE name_id = $name_id AND path LIKE $sql_pattern}]
+}
