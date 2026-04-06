@@ -24,3 +24,5 @@ Quedan los siguientes puntos como mejoras funcionales futuras:
 
 5. **Template para Nuevos Motores de SQL**
    - Definir una interfaz estándar (interface/contract) que cualquier nuevo conector de base de datos deba implementar para que `sqlk` pueda operar sobre él sin modificar el núcleo de la lógica jerárquica.
+
+6.
