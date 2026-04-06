@@ -1,70 +1,26 @@
-Hallazgos y mejoras puntuales
-1) Seguridad/robustez SQL
+# Tareas Pendientes (TODO)
 
-Estás usando sustitución de variables en sentencias db eval {... $var ...}. Con el binding de la extensión sqlite de Tcl normalmente sí se hace quoting seguro; aun así, para llaves/name que vienen de usuario, cuida que no pasen cadenas raras (comillas o puntos inesperados en paths).
+Todas las correcciones principales, la serialización XML, validaciones restrictivas (strict mode) y optimizaciones de SQL (índices, WAL, transacciones) de la lista anterior ya han sido integradas en la versión 0.8 y 0.8.1.
 
-Para rutas tipo key1.key2.key3, tu TODO ya lo dice: no crear niveles intermedios si el padre no existe. Hoy kset podría “inventar” ramas. Marca error temprano para evitar estructuras zombis.
+Quedan los siguientes puntos como mejoras funcionales futuras:
 
-2) eval/uplevel en el wrapper del ensemble
+1. **Búsquedas estrictas por nivel (Wildcards exactos)**
+   Actualmente, el uso de comodines tipo `*` en `kget` se mapea a `LIKE %` de SQL. El problema es que `%` cruza las barreras de los puntos (niveles de los nodos).
+   - `kget config.a.*.b` hará `LIKE 'config.a.%.b'` y encontrará `config.a.nivel1.b` pero **también** `config.a.nivel1.nivel2.nivel3.b`.
+   - *Solución futura*: Registrar una función TCL `regexp` dentro de la conexión SQLite (`$db function regexp ...`) para permitir búsquedas regex reales o un filtro explícito por profundidad de niveles contando los puntos del path.
 
-Veo procs que hacen proc kget {key} {eval "[namespace parent]::kget [myname] $key"}. Funciona, pero evita eval (riesgo de expansión indeseada si llega algo con espacios raros).
+2. **Parser JSON Robusto (Optimizaciones)**
+   El parser/serializador de JSON implementado como `fallback` `_json2dict` es muy básico y funciona para la estructura que el mismo paquete produce, pero no es un parser compatible totalmente con el estándar (RFC 8259).
+   - *Solución futura*: Para estructuras JSON complejas y variables externas, integrarlo con un paquete más robusto como el comando C nativo de `rl_json` o el paquete Tcl puro `json` de tcllib, condicionando su carga transparente.
 
-Usa invocación construida por lista (tailcall/uplevel con [list ...]) para que no haya interpretación extra. Misma API, cero sorpresas.
+3. **Autocompleción de limpieza (Garbage Collection de ramas vacías)**
+   Al usar `kdel` de un nodo, si el padre (o los abuelos) se quedan con 0 hijos, estos permanecen persistentes como "nodos vacíos". 
+   - *Solución futura*: Opción de modo cascada inverso (`-prune` o automático) que cuando borra el último hijo, borre recursivamente hacia arriba los padres que queden sin hijos o valores asociados.
 
-3) Comprobaciones de pares clave-valor
+4. **Abstracción de Motor de Base de Datos (SQL Homogenization)**
+   Actualmente el código está fuertemente acoplado a la sintaxis y comandos de la extensión `sqlite3` de Tcl.
+   - *Solución futura*: Crear un namespace de abstracción (ej. `::sqlk::db_layer`) que encapsule las llamadas a la base de datos.
+   - Implementar drivers para otros motores, específicamente **MySQL** (usando `mysqltcl`), manteniendo la compatibilidad de la lógica jerárquica.
 
-Vi validación con fmod([llength $args],2). En TCL puro queda más nítido y rápido con módulo entero (%) y expr. Ganas legibilidad y evitas floats.
-
-4) kmove y consistencia de orden
-
-Tu lógica de mover (after_id) cuida el “misma familia” y reordena bien, pero refuerza los UNIQUE/índices que sustentan esa invariancia (tienes índice por parent, bien).
-
-Asegura transacción alrededor de secuencias select → update para movimientos (si no lo haces ya en los bloques críticos). Minimiza estados intermedios incoherentes si se corta la luz.
-
-5) Árbol y path
-
-El path textual es práctico, pero barato romperse si cambias nombres. Para búsquedas, ya usas id/parent correctamente; no dependas de path para integridad, úsalo sólo como “cache” para tree/serialize.
-
-Si cambias el name de un nodo, confirma que el path y el orden se regeneran de forma atómica. Tienes triggers; dale una revisada a los casos de renombre encadenado.
-
-6) Serialización
-
-Tienes TODO de XML y opciones -format XML|TCL|TEXT. Mantén un sólo punto de verdad que camine el árbol y entregue pares {name val attr children}, y a partir de ahí formatea. Evita que cada formato recorra por su cuenta, así no duplicas bugs.
-
-Para -indent, cuida que no “mezcle” tabs/espacios si luego los vas a parsear. Consistencia total.
-
-7) Atributos (attr) y val
-
-attr almacenado como texto: define formato canónico (p. ej. lista Tcl key value key value) y valida al cargar. Si mañana metes JSON/XML, que sea opt-in (flag de formato) y que ambas puntas lo sepan.
-
-Delimita claramente clave reservada vs. clave de usuario en attr para que no te pisen metadatos internos.
-
-8) Concurrencia
-
-Ya pones busy/timeout. Si planeas multi-proceso, considera abrir en WAL mode (PRAGMA journal_mode=WAL) para lecturas concurrentes. Si es proceso único, como estás, ok.
-
-Donde haces secuencias largas (import/batch), BEGIN; ... COMMIT; explícito para rendimiento y atomicidad.
-
-9) Limpieza/pequeños smells
-
-Vi un puts ok en manejo de error de sqlite3 _db$dbid $filepath que parece debug colado. Remátalo.
-
-Usa ni/in de Tcl 8.6 (ya lo haces) pero evita comparaciones con strings "0" en expresiones numéricas. Menos casting mental = menos bugs tontos.
-
-Centraliza mensajes de error (`return -code error "...") con texto consistente. Ayuda un chorro cuando debugeas.
-
-10) Índices
-
-Ya tienes key_name(name) y key_data(name_id,parent)/key_data(parent).
-
-Si haces búsquedas frecuentes por name dentro del mismo parent, valora CREATE INDEX key_data_name_parent ON key_data(name_id, parent, name) para resolvedores rápidos en kget/kexist.
-
-
-# Idea para tu TODO de búsquedas:
-proc _kfind {name pattern} {
-    variable db
-    set name_id [nameid $name]
-    # Convierte el estilo Tcl (key.*.val) a SQL (key.%.val)
-    set sql_pattern [string map {* % ? _} $pattern]
-    return [$db eval {SELECT path, val FROM key_data WHERE name_id = $name_id AND path LIKE $sql_pattern}]
-}
+5. **Template para Nuevos Motores de SQL**
+   - Definir una interfaz estándar (interface/contract) que cualquier nuevo conector de base de datos deba implementar para que `sqlk` pueda operar sobre él sin modificar el núcleo de la lógica jerárquica.
