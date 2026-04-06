@@ -87,7 +87,7 @@ To migrate your data:
 - Provide a path to use disk-based SQLite storage
 
 ## 📜 License
-MIT (or specify your preference)
+MIT
 
 ## 🙏 Acknowledgements
 Born out of real system needs for shared memory management.  
