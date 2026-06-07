@@ -3,19 +3,20 @@
 `sqlk` is a lightweight key-value store implemented in Tcl using SQLite, inspired by C-style keyed lists and TclX patterns. It allows concurrent access to structured memory via SQLite while preserving performance and minimizing memory usage.
 
 ## ✨ Features
+
 - Shared memory model between parent/child processes or threads using SQLite
 - Supports `:memory:` mode for fast in-RAM operations
 - Automatically serializes to file for persistent storage
 - Can be used as log/config manager
-- Originally created in 2010 and improved over time (v0.7 released in 2019)
+- Originally created in 2008 and improved over time
 
 ## 🔧 Usage
 
 ```tcl
 package require sqlk
 
-# Initialize an in-memory database and create a command ensemble 'mainsqlk'
-sqlk::kinit :memory: -procname mainsqlk
+# Initialize a database and create a command ensemble 'mainsqlk'
+sqlk::kinit mydb.sqlite -procname mainsqlk
 
 # Add a keyed list variable named 'myvar'
 mainsqlk varadd myvar
@@ -25,76 +26,124 @@ myvar kset user.name "Raúl"
 myvar kset user.id 0001
 puts [myvar kget user.name] ;# Output: Raúl
 
-# Batch insert for performance
-myvar kbatch {
-    app.config.theme  "dark"
-    app.config.lang   "es"
-    app.window.width  1024
-}
+# Multiple keys in one call
+myvar kset app.theme dark app.lang es app.width 1024
 
-# Wildcard searches
-puts [myvar kget app.config.*] ;# Output: app.config.lang es app.config.theme dark
+# Check existence
+if {[myvar kexist user.name]} { puts "exists" }
 
-# Watch for changes
-proc on_theme_change {name key op old new} {
-    puts "Theme changed from $old to $new on $name:$key"
-}
-myvar kwatch app.config.theme on_theme_change
-myvar kset app.config.theme "light" ;# Triggers callback
+# List child keys
+puts [myvar keys user]       ;# Output: name id
 
-# Serialization and Parsing
-set xml_data [myvar serialize -format XML]
-set json_data [myvar serialize -format JSON]
+# Full key tree
+puts [myvar tree]
 
-# Parse JSON into a new variable
+# Attributes
+myvar attrset user.name type string
+puts [myvar attrget user.name type]
+
+# Delete a key (and all its children)
+myvar kdel user.name
+
+# Reorder keys
+myvar kmove user.id afterkey user.name
+
+# Serialization
+set tcldata [myvar serialize -format TCL]
+set tcldata [myvar serialize -format TCL -indent 1]
+set txtdata [myvar serialize -format TEXT]
+
+# Parse back
 mainsqlk varadd myvar2
-myvar2 parse -format JSON $json_data
+myvar2 parse $tcldata
+
+# In-memory mode (no persistence)
+sqlk::kinit :memory: -procname tmpdb
 ```
 
-## 🛠️ Extended API Commands (v0.8+)
+## 📋 API Reference
 
-The following advanced commands have been added for comprehensive data management:
+### Database-level commands (`procname`)
 
-- `kbatch list`: High-performance batch insertion using a single atomic transaction.
-- `kwatch key callback`: Watch a key (and its descendants) for changes. Callback signature: `proc cb {name key op old new}`.
-- `kcount ?key?`: Returns the number of direct children under the given key.
-- `kfind pattern`: Searches for keys matching a SQL `LIKE` pattern (using `*` and `?`). 
-- `kgetall ?key?`: Returns the specified node and all its descendants as a flat dictionary.
-- `krename key newname`: Renames a key (and updates paths of all its children), preserving its order.
-- `kmerge src_key newname ?target_key?`: Deep merges a subtree into another list.
-- `kclone newname`: Clones the entire keyed list into a new variable under the same database.
-- `kdiff key1 key2`: Compares two subtrees and returns a list of differences (additions, modifications, deletions).
-- `kset -strict 1 key val`: Strict setter that requires the `parent` node to exist.
+| Command | Description |
+|---------|-------------|
+| `procname varlist` | List all keyed list variables |
+| `procname varadd name ?-procname p? ?-enckey k?` | Create a new keyed list variable |
+| `procname vardel name` | Delete a variable and all its keys |
+| `procname kget name key` | Get value of a key |
+| `procname kset name key val ?key val ...?` | Set one or more keys |
+| `procname kdel name key` | Delete a key and its subtree |
+| `procname kexist name key` | Returns 1 if key exists, 0 otherwise |
+| `procname kmove name key ?afterkey?` | Reorder a key within its parent |
+| `procname keys name ?key?` | List direct children of a key (or root) |
+| `procname tree name ?key?` | Flat list of all keys in subtree |
+| `procname attrset name key attr val ?attr val ...?` | Set attributes on a key |
+| `procname attrget name key ?attr?` | Get attribute(s) of a key |
+| `procname attrdel name key attr` | Delete an attribute |
+| `procname serialize name ?-format TCL\|XML\|TEXT? ?-indent 0\|1? ?-key key?` | Serialize a variable |
+| `procname parse name ?-format TCL\|XML? ?-into key? data` | Import serialized data |
+| `procname varcmd name ?procname?` | Get or create the per-variable command ensemble |
+| `procname closefile` | Close the database |
+| `procname backup filename` | Backup the database to a file |
+| `procname restore filename` | Restore the database from a file |
 
-## 📄 Supported Formats
+### Per-variable commands (`namecmd`)
 
-The `serialize` and `parse` commands now support multiple formats:
-- **TCL** (Default): Native Tcl list representation.
-- **XML**: Hierarchical XML with element `<key name="..." val="..." attr="...">`.
-- **JSON**: Dictionary representation mapped to JSON strings.
-- **TEXT**: Human-readable hierarchical text dump.
+Once a variable is created with `varadd`, it gets its own command ensemble with the same operations minus the variable name argument:
 
-## 🔄 Migration from v0.7 (RC4) to v0.8 (AES)
+```tcl
+myvar kget key
+myvar kset key val ?key val ...?
+myvar kdel key
+myvar kexist key
+myvar kmove key ?afterkey?
+myvar keys ?key?
+myvar tree ?key?
+myvar attrset key attr val ?attr val ...?
+myvar attrget key ?attr?
+myvar attrdel key attr
+myvar serialize ?-format TCL|XML|TEXT? ?-indent 0|1? ?-key key?
+myvar parse ?-format TCL|XML? ?-into key? data
+```
 
-Version 0.8 replaces the old RC4 encryption with AES-128-CBC. If you have an encrypted database from v0.7, it is **not** directly compatible.
+## 📄 Serialization Formats
 
-To migrate your data:
-1. Using **v0.7**, open your database and use the `serialize` command to export your data.
-2. Using **v0.8**, create/open the new database and use the `parse` command to import the serialized data.
+| Format | Description |
+|--------|-------------|
+| `TCL` (default) | Native Tcl list — lossless roundtrip including attributes |
+| `TEXT` | Human-readable hierarchical dump |
+| `XML` | Pending implementation |
+
+## 🔐 Encryption
+
+Optional AES encryption per variable. Requires the `aes` Tcl package.
+
+```tcl
+sqlk::kinit mydb.sqlite -procname db -enckey mysecretkey
+db varadd secrets
+```
+
+Encrypted databases from v0.7 (RC4) are not directly compatible with v0.8 (AES). To migrate:
+
+1. Using **v0.7**, export with `serialize -format TCL`
+2. Using **v0.8**, import with `parse`
 
 ## 📁 Persistence Modes
-- `sqlk::init ":memory:"` for fast temporary use
-- Provide a path to use disk-based SQLite storage
+
+- `:memory:` — fast, in-RAM only, lost on close
+- `path/to/file.sqlite` — persistent disk-based storage
 
 ## 📜 License
+
 MIT
 
 ## 🙏 Acknowledgements
-Born out of real system needs for shared memory management.  
-Now shared to serve as a flexible tool for the Tcl community.
+
+Born out of real system needs for shared memory management between processes.  
+Shared to serve as a flexible tool for the Tcl community.
 
 ## ☕ Support my work
 
-If this project has been helpful to you or saved you some development time, consider buying me a coffee! Your support helps me keep exploring new optimizations and sharing quality code.
+If this project has been helpful to you or saved you some development time, consider buying me a coffee!
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/rauleli)
