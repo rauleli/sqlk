@@ -1,28 +1,66 @@
-# Tareas Pendientes (TODO)
+# TODO
 
-Todas las correcciones principales, la serialización XML, validaciones restrictivas (strict mode) y optimizaciones de SQL (índices, WAL, transacciones) de la lista anterior ya han sido integradas en la versión 0.8 y 0.8.1.
+## Pendientes
 
-Quedan los siguientes puntos como mejoras funcionales futuras:
+### 1. Serialización XML
+El formato XML en `serialize -format XML` está declarado pero no implementado.
+La estructura objetivo es:
+```xml
+<key name="user" val="">
+  <key name="name" val="Raúl" attr="type string"/>
+  <key name="id"   val="0001"/>
+</key>
+```
+Con escape correcto de `&`, `<`, `>`, `"`, `'` en valores y atributos.
+El parser (`parse -format XML`) requiere el paquete `xml` de tcllib.
 
-1. **Búsquedas estrictas por nivel (Wildcards exactos)**
-   Actualmente, el uso de comodines tipo `*` en `kget` se mapea a `LIKE %` de SQL. El problema es que `%` cruza las barreras de los puntos (niveles de los nodos).
-   - `kget config.a.*.b` hará `LIKE 'config.a.%.b'` y encontrará `config.a.nivel1.b` pero **también** `config.a.nivel1.nivel2.nivel3.b`.
-   - *Solución futura*: Registrar una función TCL `regexp` dentro de la conexión SQLite (`$db function regexp ...`) para permitir búsquedas regex reales o un filtro explícito por profundidad de niveles contando los puntos del path.
+---
 
-2. **Parser JSON Robusto (Optimizaciones)**
-   El parser/serializador de JSON implementado como `fallback` `_json2dict` es muy básico y funciona para la estructura que el mismo paquete produce, pero no es un parser compatible totalmente con el estándar (RFC 8259).
-   - *Solución futura*: Para estructuras JSON complejas y variables externas, integrarlo con un paquete más robusto como el comando C nativo de `rl_json` o el paquete Tcl puro `json` de tcllib, condicionando su carga transparente.
+### 2. Wildcards exactos por nivel en `kget`
+Actualmente `kget config.a.*.b` se mapea a SQL `LIKE 'config.a.%.b'`, y `%` cruza
+barreras de puntos — encuentra `config.a.nivel1.b` pero también `config.a.nivel1.nivel2.b`.
 
-3. **Autocompleción de limpieza (Garbage Collection de ramas vacías)**
-   Al usar `kdel` de un nodo, si el padre (o los abuelos) se quedan con 0 hijos, estos permanecen persistentes como "nodos vacíos". 
-   - *Solución futura*: Opción de modo cascada inverso (`-prune` o automático) que cuando borra el último hijo, borre recursivamente hacia arriba los padres que queden sin hijos o valores asociados.
+Solución: registrar una función Tcl dentro de la conexión SQLite en `initkdb`:
+```tcl
+$db function regexp {string match}
+```
+Y en `_kget` filtrar adicionalmente por profundidad, contando los puntos del path
+resultante para que coincida con el nivel exacto del patrón.
 
-4. **Abstracción de Motor de Base de Datos (SQL Homogenization)**
-   Actualmente el código está fuertemente acoplado a la sintaxis y comandos de la extensión `sqlite3` de Tcl.
-   - *Solución futura*: Crear un namespace de abstracción (ej. `::sqlk::db_layer`) que encapsule las llamadas a la base de datos.
-   - Implementar drivers para otros motores, específicamente **MySQL** (usando `mysqltcl`), manteniendo la compatibilidad de la lógica jerárquica.
+---
 
-5. **Template para Nuevos Motores de SQL**
-   - Definir una interfaz estándar (interface/contract) que cualquier nuevo conector de base de datos deba implementar para que `sqlk` pueda operar sobre él sin modificar el núcleo de la lógica jerárquica.
+### 3. Optimización de `kset` para keys existentes
+El loop actual baja nivel por nivel con una query por segmento de path.
+Para keys que ya existen, un intento directo por path primero reduce el costo a una sola query:
+```tcl
+set p [$db onecolumn {select id from key_data where name_id=$name_id and path=$k}]
+if {$p != ""} {
+    $db eval {update key_data set val=$ev where id=$p}
+    continue
+}
+# solo si no existe, bajar nivel por nivel a insertar...
+```
+El índice `key_data_key2 (name_id, path)` ya está en su lugar para soportar esto.
 
-6.
+---
+
+### 4. Garbage collection de ramas vacías (`-prune`)
+Al borrar un nodo con `kdel`, si el padre queda sin hijos y sin valor propio,
+permanece como nodo vacío. Propuesta: flag opcional `-prune` en `kdel` que suba
+recursivamente borrando padres que queden vacíos:
+```tcl
+myvar kdel -prune config.db.host
+```
+Sin el flag, el comportamiento actual se preserva.
+
+---
+
+### 5. Abstracción de motor SQL
+El código está acoplado a `sqlite3`. A futuro, un namespace `::sqlk::db_layer`
+que encapsule las llamadas permitiría soportar otros motores (MySQL vía `mysqltcl`)
+sin modificar la lógica jerárquica principal.
+Requiere definir una interfaz mínima que cualquier driver deba implementar:
+`query`, `onecolumn`, `exec`, `transaction`, `function`, `close`, `backup`.
+
+**Nota**: los triggers y el view `key_sort` son específicos de SQLite.
+Un driver MySQL requeriría reimplementar esa lógica en Tcl.
