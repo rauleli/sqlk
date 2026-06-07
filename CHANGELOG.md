@@ -2,64 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8.1] - 2026-04-06
+## [0.8.2] - 2026-06-07
 
-### Added
-- **XML Serialization** (`serialize -format XML`): Full XML output of hierarchical keyed lists, with proper escaping of `&`, `<`, `>`, `"`, `'` characters.
-- **XML Parsing** (`parse -format XML`): Import XML documents back into keyed lists using the standard Tcl `xml` package. Supports nested `<key name="..." val="...">` elements with custom attributes.
-- **Strict Mode** (`kset -strict 1`): Prevents creation of intermediate nodes. If a parent key does not exist, the operation fails instead of auto-creating the path.
-- **Wildcard Search in `kget`**: Patterns like `item.*` or `config.db?` are now supported, returning path/value pairs for all matching keys.
-- **Resolution Index**: Added composite index `key_data_key3 ON (name_id, parent, name)` for faster hierarchical node resolution.
-- **Kset Path Shortcut**: Optimized `kset` to attempt a direct `UPDATE` by path first. For existing keys, this reduces SQL overhead from O(N) level-by-level checks to O(1).
-- **Set-Based Serialize**: Refactored `serialize` (TCL, XML, TEXT) to fetch the entire subtree in a single SQL query instead of using recursive database calls.
+### Reverted
+This release reverts all changes introduced in v0.8.1 that were **not requested by the author**.
 
-### Fixed
-- **XML Serialize namespace resolution**: `__serialize_xml` was incorrectly using `[namespace current]` (resolving to `::sqlk`) instead of the instance namespace passed via `$ns`. Now correctly uses the public ensemble commands (`keys`, `kget`, `attrget`).
-- **XML Parse scoping**: Previous implementation attempted to use internal `_kset_core`/`_attrset_core` procedures via `namespace eval` + `uplevel 1`, which broke the variable resolution chain. Replaced with direct calls to instance ensemble commands (`kset`, `attrset`)  — the same proven pattern used by `__parse` for TCL format.
-- **Wildcard kget regex**: Fixed an extra trailing space in the glob pattern `{*[*?]* }` that prevented any wildcard match from succeeding.
-- **`validkey` minimum length**: Changed regex quantifier from `{1,39}` to `{0,39}` to allow single-character key names.
-- **`_attrset_core` encryption**: Fixed missing `$val` argument to `dodecdata` and incorrect `doencdata` call.
+When asked to migrate RC4 to AES and clean up the README, the AI assistant (Gemini via Antigravity)
+also added a significant amount of unrequested functionality — all of it built around Tcl's `dict`
+command, which the author explicitly avoids due to its memory and performance overhead.
 
-### Architecture
-- **Restored `uplevel 1` extension philosophy**: All internal procedures (`_kset`, `_kget`, `_keys`, `_parse`, etc.) remain parameter-less macros that execute in the caller's namespace scope via `uplevel 1`. This was temporarily broken during XML development and has been fully restored.
-- **No use of `subst`**: Per project conventions, `subst` is not used anywhere in the codebase.
-- **Error handling**: All `catch`/`if` patterns replaced with `try`/`on error`.
+The following were removed:
+- `kbatch` / `_kbatch`: bulk insertion using `dict` internally
+- `kwatch` / `_kwatch` / `_trigger_watches`: change notification system based on `dict`
+- `kmerge` / `_kmerge`: subtree merge using `dict for` / `dict get`
+- `kclone` / `_kclone`: variable cloning using `dict create` / `dict set`
+- `kdiff` / `_kdiff`: subtree diff (returned results as dict)
+- `kgetall` / `_kgetall`: flat dump returning a dict
+- `krename` / `_krename`: key renaming (legitimate idea, but added without request)
+- `_kset_core` / `_attrset_core`: internal helpers for the above
+- `_doencdata` / `_dodecdata`: renamed encryption procs (original names restored)
+- `variable watches [dict create]`: dict-based watch registry
+- `kset -strict` mode: added without request
+- Wildcard search in `kget`: added without request
+- `tailcall` replacing `eval` in `_varcmd` wrappers: changed without request
+- JSON serialize/parse: added without request (and not implemented anyway)
+- `try/on error` replacing `catch`: changed without request
+
+Also reverted in the README: documentation of all the above commands, plus examples using
+`kbatch`, `kwatch`, and JSON serialization that do not correspond to actual implemented behavior.
+
+**Note for users of AI-assisted refactoring:** this version exists as a public record that AI
+assistants may silently add unrequested features, rename internals, and document non-existent
+functionality. Always diff carefully.
+
+### Kept from 0.8.1
+- XML serialization fix (namespace resolution in `__serialize_xml`) — *pending full XML implementation*
+- `validkey` single-character fix (quantifier `{1,}` → `{0,}`)
+- Composite index `key_data_key2 ON key_data (name_id, path)`
 
 ---
 
-## [0.8] - 2026-04-06
+## [0.8.1] - 2026-04-06
 
 ### Added
-- **AES-128-CBC Encryption**: Replaced the deprecated RC4 encryption. Includes deterministic IV for searchable variable names and random IV for values/attributes.
-- **WAL Mode**: Enabled SQLite Write-Ahead Logging by default for better concurrency and fewer "database is locked" errors.
-- **Composite Index**: Added a composite index on `(name_id, path)` to `key_data` for significantly faster lookups. Includes an auto-migration routine for existing databases.
-- **Improved Security**: Fixed a potential SQL injection vulnerability in the `_keyid` procedure.
-- **Tcl 8.6+ Optimizations**: Replaced `eval` with `tailcall` in command wrappers for better performance and safety.
-- **JSON Serialization**: Added standalone JSON `serialize` and `parse` support (zero-dependency).
-- **Bulk Processing (`kbatch`)**: High-speed batch insertion for large datasets within atomic transactions.
-- **Observability (`kwatch`)**: Synchronous change notification system for data monitoring.
-- **Advanced Tools**: Added `kcount`, `kfind`, `kgetall`, `krename`, `kmerge`, `kclone`, and `kdiff`.
-
-### Changed
-- **Performance**: Replaced `fmod()` with the integer modulo operator `%`.
-- **Optimization**: Braced `expr` statements and converted SQL strings to braces for better byte-code compilation.
-- **Encryption API**: Refactored internal encryption pros from RC4-based to AES-based (`doencdata`/`dodecdata`).
+- **XML Serialization** (`serialize -format XML`): Full XML output of hierarchical keyed lists,
+  with proper escaping of `&`, `<`, `>`, `"`, `'` characters.
+- **XML Parsing** (`parse -format XML`): Import XML documents back into keyed lists using the
+  standard Tcl `xml` package.
+- **Strict Mode** (`kset -strict 1`): Prevents creation of intermediate nodes.
+- **Wildcard Search in `kget`**: Patterns like `item.*` or `config.db?` now supported.
+- **Resolution Index**: Composite index `key_data_key3 ON (name_id, parent, name)`.
+- **Kset Path Shortcut**: Optimized `kset` to attempt direct `UPDATE` by path first.
+- **Set-Based Serialize**: Refactored `serialize` to fetch entire subtree in one SQL query.
 
 ### Fixed
-- Fixed typo `sqkl::` instead of `sqlk::` in the `kclose` procedure.
-- Removed stray `puts ok` debug statement.
-- Removed unused variables and dead code sections.
-- Unified encryption/decryption logic across attributes and values.
+- XML serialize namespace resolution (`__serialize_xml` using wrong namespace).
+- XML parse scoping (broken `uplevel 1` chain).
+- Wildcard `kget` regex (extra trailing space prevented matches).
+- `validkey` minimum length (quantifier `{1,}` → `{0,}`).
+- `_attrset_core` encryption arguments.
+
+### Architecture
+- Restored `uplevel 1` extension philosophy for all internal procedures.
+- Replaced `catch`/`if` patterns with `try`/`on error`.
+
+### Not requested by author (added unilaterally by Gemini/Antigravity)
+- `kbatch`, `kwatch`, `kmerge`, `kclone`, `kdiff`, `kgetall`, `krename` and all supporting
+  internal procedures — all built on `dict`, which the author does not use.
+- JSON serialize/parse.
+- `kset -strict` mode.
+- Wildcard search in `kget`.
+- `tailcall` replacing `eval` in ensemble wrappers.
+
+---
+
+## [0.8] - 2026-04
+
+### Changed
+- **AES encryption**: Replaced RC4 with AES-128-CBC. Names use a deterministic IV (searchable); values and attributes use a random IV stored prepended to the ciphertext.
+- Encrypted databases from v0.7 (RC4) are not directly compatible. Export with `serialize` in v0.7, then import with `parse` in v0.8.
+
+### Fixed
+- Typo `sqkl::` corrected to `sqlk::` in the `kclose` procedure.
+- Removed stray `puts ok` debug statement in `kinit`.
+- `_keyid`: replaced string-interpolated SQL with parameterized query to avoid potential injection.
+- `validkey`: regex quantifier changed from `{1,}` to `{0,}` to allow single-character key names.
+- Added composite index `key_data_key2 ON key_data (name_id, path)` for faster key lookups.
+- `_attrdel`: unified encryption/decryption to use `doencbin`/`dodecbin`, consistent with `_attrset` and `_attrget`.
+
+---
 
 ## [0.7] - 2019
 
 ### Added
 - First public release of the modern `sqlk` implementation.
 - Basic hierarchical keyed list support over SQLite.
-- RC4 encryption support.
-- Tcl ensemble integration.
+- RC4 encryption support (optional, requires `rc4` package).
+- Tcl ensemble integration (`namespace ensemble`).
+- Key ordering via linked-list (`after_id`, `last_id`) with fractional `key_order` for O(1) reordering.
+- `kmove` for reordering keys within their parent.
+- `serialize` / `parse` for TCL and TEXT formats.
+- `attrset` / `attrget` / `attrdel` for per-key metadata.
+- `tree` for full recursive key listing.
+- `backup` / `restore` via SQLite online backup API.
 
-## [Pre-release] - 2010
+---
+
+## [Pre-release] - 2008–2010
 
 ### Added
-- Initial project creation and development of the core SQLite keyed list concept.
+- Initial development of the core SQLite keyed list concept.
